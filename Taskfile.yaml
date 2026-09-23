@@ -1,0 +1,86 @@
+version: "3"
+
+vars:
+  PKG: ./...
+  AAR_DEMO_OUT: /tmp/androidsvc-demo.aar
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task: --list-all
+
+  build:
+    desc: "Build the stub variant (host platform)"
+    cmds:
+      - go build {{.PKG}}
+
+  vet:
+    desc: "go vet across all packages (stub variant)"
+    cmds:
+      - go vet {{.PKG}}
+
+  test:
+    desc: "Run Go unit tests"
+    cmds:
+      - go test {{.PKG}}
+
+  fmt:
+    desc: "gofmt -s in place"
+    cmds:
+      - gofmt -s -w .
+
+  fmt:check:
+    desc: "Fail if any file is not gofmt -s clean"
+    cmds:
+      - >-
+        diff=$(gofmt -s -l . | tee /dev/stderr);
+        if [ -n "$diff" ]; then echo "gofmt -s issues found"; exit 1; fi
+
+  staticcheck:
+    desc: "Run staticcheck on all packages (skipped if not installed). Excludes U1000 because cross-platform packages have symbols only consumed under //go:build android."
+    cmds:
+      - >-
+        if command -v staticcheck >/dev/null; then
+          staticcheck -checks="inherit,-U1000" {{.PKG}};
+        else
+          echo "staticcheck not installed; skipping"; fi
+
+  check:
+    desc: "Composite: fmt:check + vet + test (CI gate)"
+    cmds:
+      - task: fmt:check
+      - task: vet
+      - task: test
+      - task: staticcheck
+
+  android:smoke:
+    desc: "Cross-compile the cgo + Go for android/arm64 to flag NDK/JNI issues."
+    summary: |
+      Runs `go build` against GOOS=android, GOARCH=arm64 with the NDK
+      clang as CC. Validates that the cgo blocks parse and link against
+      jni.h. Does NOT exercise gomobile bind — androidsvc is meant to be
+      imported by a consumer package (e.g. einkapp), not directly bound:
+      its top-level Service interface returns Go-only types that gobind
+      cannot translate.
+    preconditions:
+      - sh: 'test -n "$ANDROID_NDK_HOME"'
+        msg: "ANDROID_NDK_HOME is not set"
+    cmds:
+      - CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang" go build ./...
+
+  java:check:
+    desc: "Smoke-compile the Java companion classes against android.jar"
+    summary: |
+      Confirms GoServiceBridge.java and GoForegroundService.java compile
+      against an android.jar from $ANDROID_HOME. Does not exercise JNI.
+    preconditions:
+      - sh: 'test -n "$ANDROID_HOME"'
+        msg: "ANDROID_HOME is not set"
+    cmds:
+      - mkdir -p /tmp/androidsvc-javac
+      - javac -source 17 -target 17 -cp "$ANDROID_HOME/platforms/android-33/android.jar" -d /tmp/androidsvc-javac java/io/gosicp/androidsvc/*.java
+
+  clean:
+    cmds:
+      - rm -rf /tmp/androidsvc-smoke /tmp/androidsvc-javac {{.AAR_DEMO_OUT}}

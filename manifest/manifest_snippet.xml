@@ -1,0 +1,32 @@
+<!--
+  Snippet to merge into your app's AndroidManifest.xml.
+  Targets Android 13 (API 33). Aligned for forward-compatibility with
+  Android 14 (foregroundServiceType becomes mandatory).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required to run any foreground service since Android 9 (API 28). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!--
+      Android 13: runtime permission required to post any notification,
+      including the ongoing foreground notification.
+      Request it with ActivityCompat.requestPermissions(...) on first launch.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Android 14: each foreground service type needs its specific permission.
+      Pick the one that matches your workload. dataSync is the common choice
+      for "keep an internal worker alive and surface state to the UI".
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <service
+            android:name="io.gosicp.androidsvc.GoForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>
